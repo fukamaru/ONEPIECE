@@ -62,7 +62,7 @@ venv.bak/
 temp/
 
 # Data files & Models & Logs
-data/
+dataset/
 bin/
 *.pth
 *.ckpt
