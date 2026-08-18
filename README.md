@@ -1,1 +1,1 @@
-# ONEPIECE: Towards Nation-Scale Human mobility Foundation Models
+# ONEPIECE: Towards Nation-Scale Human Mobility Foundation Models
