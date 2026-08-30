@@ -110,7 +110,7 @@ class MapTileSystem:
 
         anchor_width = xmax - xmin
         anchor_height = ymax- ymin
-        anchor_size = (anchor_width, anchor_height)
+        anchor_size = max(anchor_width, anchor_height)
 
         self.max_zoom, self.root_size = self._resolve_grid(
             anchor_size=anchor_size,
@@ -129,7 +129,7 @@ class MapTileSystem:
         self.root_bbox = self._xy_bbox_to_lonlat(
             self.root_xy.reshape(1, 4)
         )[0]
-        self.root_bbox = BBox(**self.root_bbox)
+        self.root_bbox = BBox(*self.root_bbox)
 
         self.tile_size = (
             self.root_size / (1 << self.max_zoom)
@@ -252,6 +252,28 @@ class MapTileSystem:
     # ==================================================================
     # Coordinate Conversion
     # ==================================================================
+    def _tile_bboxs_batch(
+            self,
+            z: np.ndarray,
+            x: np.ndarray,
+            y: np.ndarray
+    ) -> np.ndarray:
+
+        n = np.left_shift(np.int64(1), z)
+
+        size = self.root_size / n
+
+        xmin = self._root_xmin + x * size
+        xmax = xmin + size
+        ymax = self._root_ymax - y * size
+        ymin = ymax - size
+
+        xy_bboxs = np.column_stack(
+            (xmin, ymin, xmax, ymax)
+        )
+
+        return self._xy_bbox_to_lonlat(xy_bboxs)
+
     @classmethod
     def _lonlat_to_xy(
         cls,
@@ -294,13 +316,13 @@ class MapTileSystem:
         )
 
         return np.column_stack(
-            min_lon, min_lat, max_lon, max_lat
+            (min_lon, min_lat, max_lon, max_lat)
         )
 
     # ==================================================================
     # Tile Query Functions
     # ==================================================================
-    def query_cover_tile(
+    def query_single(
             self,
             bbox: (
                 BBox
@@ -394,7 +416,7 @@ class MapTileSystem:
 
         x1 = np.floor(
             np.nextafter(
-                (xmax - self._root_xmin) * self._scale_max - np.inf
+                (xmax - self._root_xmin) * self._scale_max, - np.inf
             )
         ).astype(np.int64)
 
@@ -404,7 +426,7 @@ class MapTileSystem:
 
         y1 = np.floor(
             np.nextafter(
-                (self._root_ymax - ymax) * self._scale_max - np.inf
+                (self._root_ymax - ymax) * self._scale_max, - np.inf
             )
         ).astype(np.int64)
 
@@ -542,7 +564,7 @@ class MapTileSystem:
             single = True
 
         elif (
-            array.ndim == 1
+            array.ndim == 2
             and array.shape[1] == 4
         ):
             single = False
