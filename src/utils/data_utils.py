@@ -1,15 +1,61 @@
+"""
+TODO
+- 将Mobility统一处理成GeoJSON形式的功能：处理完的结果包含基本属性+Geometry+经纬度范围（这是为了方便索引）
+"""
 from __future__ import annotations
 
 import json
 import uuid
 import types
 import base64
+import numpy as np
 from enum import Enum
 from pathlib import Path
 from datetime import date, datetime, time
 from dataclasses import fields, is_dataclass
-from typing import Any, Iterator, Union, Self, get_origin, get_args, get_type_hints
+from shapely.geometry import Point, LineString, Polygon
+from typing import Any, Iterator, Union, Literal, Self, get_origin, get_args, get_type_hints
 
+
+# ===============================================================================================
+# Save/Load Mobility Data as/from GeoJSON like format
+# ===============================================================================================
+
+def _to_geometry(
+        lonlat: np.ndarray,
+        properties: dict,
+        geom_type: Literal["Point", "LineString", "Polygon"]
+) -> dict:
+    if geom_type == "Point":
+        return {
+            "properties": properties,
+            "geometry": Point(lonlat[0, 0], lonlat[0, 1])
+        }
+    elif geom_type == "LineString":
+        return {
+            "properties": properties,
+            "geometry": LineString(lonlat)
+        }
+    elif geom_type == "Polygon":
+        return {
+            "properties": properties,
+            "geometry": Polygon(lonlat)
+        }
+    else:
+        raise ValueError(f"Unsupported Geometry Type: {geom_type}")
+
+
+def _from_geometry(
+        geojson_like: dict
+) -> tuple[dict, np.ndarray]:
+    geom = geojson_like.get("geometry")
+    properties = geojson_like.get("properties")
+    return properties, geom
+
+
+# ===============================================================================================
+# Serializable Dataclass for Saving/Loading Mobility Data in GeoJSON-like format
+# ===============================================================================================
 
 class SerializableDataclass:
 
@@ -497,3 +543,13 @@ class SerializableDataclass:
         from_version: int
     ) -> dict[str, Any]:
         return data
+
+# ===============================================================================================
+# Serializable Dataclass for Saving/Loading Mobility Data in GeoJSON-like format
+# ===============================================================================================
+
+
+__all__ = [
+    "SerializableDataclass"
+]
+    

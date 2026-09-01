@@ -73,8 +73,7 @@ ArrayLike = Union[np.ndarray, Sequence[Sequence[float]], Sequence[float]]
 GeoJSONLike = Mapping[str, Any]
 
 # =========================================================================
-# Coordination Conversion
-# Geographical Coordination <-> Tile Coordination
+# Helper
 # =========================================================================
 
 def _as_xy_array(
@@ -91,145 +90,184 @@ def _as_xy_array(
     return arr[..., :2]
 
 
-def lonlat_to_web_mercator_normalized(
-        lonlat_coords: ArrayLike
-) -> np.ndarray:
-    arr = _as_xy_array(lonlat_coords)
+def _broadcast(value, shape, name: str, dtype):
+    arr = np.asarray(value, dtype=dtype)
+    try:
+        return np.broadcast_to(arr, shape)
+    except ValueError as exc:
+        raise ValueError(
+            f"{name} with shape {arr.shape} cannot broadcast to coordinate shape {shape}"
+        ) from exc
 
-    lon = arr[..., 0]
-    lat = np.clip(
-        arr[..., 1],
-        - WEB_MERCATOR_MAX_LAT,
-        WEB_MERCATOR_MAX_LAT
-    )
 
-    x = (lon + 180.0) / 360.0
+def _broadcast_bounds(bounds, shape) -> np.ndarray:
+    arr = np.asarray(bounds, dtype=np.float64)
+
+    if arr.shape[-1:] != (4,):
+        raise ValueError(
+            f"bounds must have shape (..., 4) but {arr.shape} received"
+        )
+
+    target_shape = shape + (4,)
+
+    try:
+        return np.broadcast_to(arr, target_shape)
+    except ValueError as exc:
+        raise ValueError(
+            f"bounds with shape {arr.shape} cannot broadcast to {target_shape}"
+        ) from exc
+
+# =========================================================================
+# Geographical Coordinates <-> Standard XYZ Tile Coordinates
+# =========================================================================
+
+def _geographic_to_tile_xyz(
+        lonlat: ArrayLike,
+        z: Union[int, Sequence[int]],
+        x: Union[int, Sequence[int]],
+        y: Union[int, Sequence[int]],
+        extent: int | float = EXTENT
+) -> None:
+    lonlat_arr = _as_xy_array(lonlat)
+    shape = lonlat_arr.shape[:-1]
+
+    z = _broadcast(z, shape, "z", dtype=np.float64)
+    x = _broadcast(x, shape, "x", dtype=np.float64)
+    y = _broadcast(y, shape, "y", dtype=np.float64)
+    extent = _broadcast(extent, shape, "extent", dtype=np.float64)
+
+    lon = lonlat_arr[..., 0]
+    lat = lonlat_arr[..., 1]
+
+    world_size = np.exp2(z)
+    # global floating XYZ coordinate at zoom z
+    global_x = (lon + 180.0) / 360.0 * world_size
     lat_rad = np.deg2rad(lat)
-    y = (1.0 - np.arcsinh(np.tan(lat_rad)) / np.pi) * 0.5
+    global_y = (
+        1.0 - np.arcsinh(np.tan(lat_rad)) / np.pi
+    ) * 0.5 * world_size
 
-    return np.stack((x, y), axis=-1)
+    # global XYZ -> local tile coordinate
+    tile_x = (global_x - x) * extent
+    tile_y = (global_y - y) * extent
+
+    return np.stack((tile_x, tile_y), axis=-1)
 
 
-def web_mercator_normalized_to_lonlat(
-        coords: ArrayLike
+def _geographic_from_tile_xyz(
+        tile_xy: ArrayLike,
+        z: Union[int, Sequence[int]],
+        x: Union[int, Sequence[int]],
+        y: Union[int, Sequence[int]],
+        extent: int | float = EXTENT
 ) -> np.ndarray:
-    arr = _as_xy_array(coords)
-    x = arr[..., 0]
-    y = arr[..., 1]
-    
-    lon = x * 360.0 - 180.0
+    xy_arr = _as_xy_array(tile_xy)
+    shape = xy_arr.shape[:-1]
+
+    z = _broadcast(z, shape, "z", dtype=np.float64)
+    x = _broadcast(x, shape, "x", dtype=np.float64)
+    y = _broadcast(y, shape, "y", dtype=np.float64)
+    extent = _broadcast(extent, shape, "extent", dtype=np.float64)
+
+    global_x = x + xy_arr[..., 0] / extent
+    global_y = y + xy_arr[..., 1] / extent
+
+    world_size = np.exp2(z)
+
+    # inverse global XYZ x
+    lon = global_x / world_size * 360.0 -180.0
+    # inverse web-mercator y
+    mercator_y = np.pi * (
+        1.0 - 2.0 * global_y / world_size
+    )
     lat = np.rad2deg(
         np.arctan(
-            np.sinh(
-                np.pi * (1.0 - 2.0 * y)
-            )
+            np.sinh(mercator_y)
         )
     )
-    
+
     return np.stack((lon, lat), axis=-1)
 
+# =========================================================================
+# Geographical Coordinates <-> Custom Tile Coordinates
+# =========================================================================
 
-@dataclass(frozen=True)
-class TileTransform:
+def _lonlat_to_tile_custom(
+        lonlat: ArrayLike,
+        bboxs: Union[Tuple[float, float, float, float], BBox],
+        extent: int | float = EXTENT
+) -> np.ndarray:
+    '''
+    Convert geograpgical coordinates (lon, lat) x N to local tile coordinates in custom tile system.
+    '''
+    lonlat_arr = _as_xy_array(lonlat)
+    # how many coordinates in the batch
+    shape = lonlat_arr.shape[:-1]
 
-    width: int = 256
-    height: int = 256
-    mode: Literal['xyz', 'bbox'] = 'bbox'
-    # for bbox
-    bbox: BBox | Tuple[float, float, float, float] | None = None
-    # for standard tiles xyz
-    x: int | None = None
-    y: int | None = None
-    z: int | None = None
+    bboxs = _broadcast_bounds(bboxs, shape)
+    extent = _broadcast(extent, shape, "extent", dtype=np.float64)
 
-    @classmethod
-    def from_xyz(
-        cls,
-        z: int,
-        x: int,
-        y: int,
-        width: int = 256,
-        height: int = 256
-    ) -> TileTransform:
-        if z < 0:
-            raise ValueError(f"Zoom must be non-negative but {z} received")
+    min_x = bboxs[..., 0]
+    min_y = bboxs[..., 1]
+    max_x = bboxs[..., 2]
+    max_y = bboxs[..., 3]
 
-        n = 1 << z
-        if not (0 <= x < n and 0 <= y < n):
-            raise ValueError(f"invalid tile index {z}/{x}/{y} under zoom={z}")
+    span_x = max_x - min_x
+    span_y = max_y - min_y
 
-        if width <= 0 or height <= 0:
-            raise ValueError(f"both width and height configuration must be positive")
-
-        return cls(width=width, height=height, mode='xyz', z=z, x=x, y=y)
-
-    @classmethod
-    def from_lonlat_bbox(
-        cls, 
-        bbox: BBox | Tuple[float, float, float, float],
-        width: int = 256,
-        height: int = 256
-    ) -> TileTransform:
-        
-        if width <= 0 or height <= 0:
-                raise ValueError(f"both width and height configuration must be positive")
-        
-        return cls(width=width, height=height, mode='bbox', bbox=bbox)
-
-    def lonlat_to_pixels(
-            self,
-            lonlat_coords: ArrayLike
-    ) -> np.ndarray:
-
-        arr = _as_xy_array(lonlat_coords)
-
-        if self.mode == "xyz":
-            assert (
-                self.z is not None
-                and self.x is not None
-                and self.y is not None
-            )
-
-            world = lonlat_to_web_mercator_normalized(arr)
-            n = float(1 << self.z)
-
-            tile_x = world[..., 0] * n
-            tile_y = world[..., 1] * n
-
-            px = (tile_x - self.x) * self.width
-            py = (tile_y - self.y) * self.height
-
-        if self.mode == 'bbox':
-            assert self.bbox is not None
-
-            min_lon, min_lat, max_lon, max_lat = self.bbox.as_tuple() if isinstance(self.bbox, BBox) else self.bbox
-            px = (arr[..., 0] - min_lon) / (max_lon - min_lon) * self.width
-            py = (max_lat -  arr[..., 1]) / (max_lat -  min_lat) * self.height
-
-        return np.stack((px, py), axis=-1)
-
-    def tile_bbox_lonlat(
-            self
-    ) -> Tuple[float, float, float, float]:
-        if self.mode == 'bbox':
-            assert self.bbox is not None
-            return self.bbox if isinstance(self.bbox, Tuple) else self.bbox.as_tuple()
-
-        assert (
-            self.z is not None
-            and self.x is not None
-            and self.y is not None
+    if np.any(span_x <= 0) or np.any(span_y <= 0):
+        raise ValueError(
+            "invalid bounds: bounds must satisfy max_x > min_x and max_y > min_y"
         )
 
-        n = float(1 << self.z)
-        tl = np.array([self.x / n, self.y / n], dtype=np.float64)
-        br = np.array([(self.x + 1) / n, (self.y + 1) / n], dtype=np.float64)
-        lonlat = web_mercator_normalized_to_lonlat(np.stack((tl, br)))
-        min_lon, max_lat = lonlat[0]
-        max_lon, min_lat = lonlat[1]
+    tile_x = (
+        (lonlat_arr[..., 0] - min_x)
+        / span_x * extent
+    )
+    tile_y = (
+        (max_y - lonlat_arr[..., 1])
+        / span_y * extent
+    )
 
-        return float(min_lon), float(min_lat), float(max_lon), float(max_lat)
+    return np.stack((tile_x, tile_y), axis=-1)
 
+def _lonlat_from_tile_custom(
+        tile_xy: ArrayLike,
+        bboxs: Union[Tuple[float, float, float, float], BBox],
+        extent: int | float = EXTENT
+) -> np.ndarray:
+    xy_arr = _as_xy_array(tile_xy)
+    shape = xy_arr.shape[:-1]
+
+    bboxs = _broadcast_bounds(bboxs, shape)
+    extent = _broadcast(extent, shape, "extent", dtype=np.float64)
+
+    if np.any(extent <= 0):
+        raise ValueError(
+            f"extent must be positive but {extent} received"
+        )
+
+    min_x = bboxs[..., 0]
+    min_y = bboxs[..., 1]
+    max_x = bboxs[..., 2]
+    max_y = bboxs[..., 3]
+
+    span_x = max_x - min_x
+    span_y = max_y - min_y
+
+    if np.any(span_x <= 0) or np.any(span_y <= 0):
+        raise ValueError(
+            "invalid bounds: bounds must satisfy max_x > min_x and max_y > min_y"
+        )
+
+    lon = (
+        min_x + xy_arr[..., 0] / extent * span_x
+    )
+    lat = (
+        max_y - xy_arr[..., 1] / extent * span_y
+    )
+
+    return np.stack((lon, lat), axis=-1)
 
 # =========================================================================
 # Processing before sending into render
@@ -390,3 +428,15 @@ def _iter_geometry_coordinate_arrays(
             yield from _iter_geometry_coordinate_arrays(geom)
     else:
         raise TypeError(f"Unsupported GeoJSON geometry type: {typ!r}")
+
+
+__all__ = [
+    "_to_tile_xyz",
+    "_from_tile_xyz",
+
+    "_to_tile_custom",
+    "_from_tile_custom",
+
+    "douglas_peucker",
+    "simplify_tile_geometries"
+]
