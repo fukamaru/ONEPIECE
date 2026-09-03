@@ -74,6 +74,10 @@ class MapTileSystem:
     HALF_WORLD = math.pi * R
     WORLD_SIZE = 2.0 * HALF_WORLD
 
+    # tolerance measured in max-zoom tile-index units
+    # this is only used to snap values that should mathematically lie exactly on tile boundaries
+    _INDEX_SNAP_ATOL = 1e-7
+
     def __init__(
             self,
             bbox: BBox | tuple[float, float, float, float],
@@ -396,11 +400,13 @@ class MapTileSystem:
             bboxs[:, 2], bboxs[:, 3]
         )
 
+        # Use a tiny XY tolerance for coordinates produced by the inverse transform of this same grid
+        xy_tol = max(self.root_size * 1e-12, 1e-7)
         outside = (
-            (xmin < self._root_xmin)
-            | (ymin < self._root_ymin)
-            | (xmax > self._root_xmax)
-            | (ymax > self._root_ymax)
+            (xmin < self._root_xmin - xy_tol)
+            | (ymin < self._root_ymin - xy_tol)
+            | (xmax > self._root_xmax + xy_tol)
+            | (ymax > self._root_ymax + xy_tol)
         )
 
         if np.any(outside):
@@ -410,48 +416,45 @@ class MapTileSystem:
             )
 
         ## Tile range occupied by each query at max_zoom
-        x0 = np.floor(
+        fx0 = (
             (xmin - self._root_xmin) * self._scale_max
-        ).astype(np.int64)
-
-        x1 = np.floor(
-            np.nextafter(
-                (xmax - self._root_xmin) * self._scale_max, - np.inf
-            )
-        ).astype(np.int64)
-
-        y0 = np.floor(
+        )
+        fx1 = (
+            (xmax - self._root_xmin) * self._scale_max
+        )
+        fy0 = (
             (self._root_ymax - ymax) * self._scale_max
-        ).astype(np.int64)
+        )
+        fy1 = (
+            (self._root_ymax - ymin) * self._scale_max
+        )
 
-        y1 = np.floor(
-            np.nextafter(
-                (self._root_ymax - ymax) * self._scale_max, - np.inf
-            )
-        ).astype(np.int64)
+        fx0 = self._snap_to_integer(fx0)
+        fx1 = self._snap_to_integer(fx1)
+        fy0 = self._snap_to_integer(fy0)
+        fy1 = self._snap_to_integer(fy1)
+
+        # the maximum edge is treated as exclusive for tile enumeration
+        x0 = np.floor(fx0).astype(np.int64)
+        x1 = np.floor(np.nextafter(fx1, -np.inf)).astype(np.int64)
+        y0 = np.floor(fy0).astype(np.int64)
+        y1 = np.floor(np.nextafter(fy1, -np.inf)).astype(np.int64)
 
         np.clip(x0, 0, self._n_max - 1, out=x0)
         np.clip(x1, 0, self._n_max - 1, out=x1)
         np.clip(y0, 0, self._n_max - 1, out=y0)
         np.clip(y1, 0, self._n_max - 1, out=y1)
 
-        # Longest common quadtree prefix
         diff = (
             np.bitwise_xor(x0, x1)
-            |
-            np.bitwise_xor(y0, y1)
+            | np.bitwise_xor(y0, y1)
         )
-
-        exponent = np.frexp(
+        shift = np.frexp(
             diff.astype(np.float64)
         )[1].astype(np.int64)
 
         z = (
-            self.max_zoom - exponent
-        )
-
-        shift = (
-            self.max_zoom - z
+            self.max_zoom - shift
         )
 
         x = np.right_shift(
@@ -574,6 +577,19 @@ class MapTileSystem:
 
         self._validate_bbox_array(array)
         return array, single
+
+    def _snap_to_integer(
+            self,
+            values: np.ndarray
+    ) -> np.ndarray:
+        nearest = np.rint(values)
+        ulp_tol = 8.0 * np.abs(np.spacing(values))
+        tol = np.maximum(self._INDEX_SNAP_ATOL, ulp_tol)
+        return np.where(
+            np.abs(values - nearest) <= tol,
+            nearest,
+            values
+        )
 
     @staticmethod
     def to_quadkey(

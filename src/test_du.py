@@ -38,6 +38,7 @@ if __name__ == "__main__":
         min_tile_size=CHENGDU_METADATA["tile-system"]["min_tile_size"]
     )
 
+    # bounds of every trajectory
     bboxs = np.array(
         [
             [
@@ -49,6 +50,7 @@ if __name__ == "__main__":
         dtype=np.float64
     )
 
+    # the located tile of every trajectory
     local_tiles = tile_system.query_single(
         bbox=bboxs
     )
@@ -56,6 +58,9 @@ if __name__ == "__main__":
         {
             "quadkey": str(t.quadkey),
             "bbox": t.bbox.as_tuple(),
+            "z": t.z,
+            "x": t.x,
+            "y": t.y,
             "coord_system": "geographic"
         }
         for t in local_tiles
@@ -65,9 +70,14 @@ if __name__ == "__main__":
         traj["properties"].update(
             {
                 "quadkey": tile["quadkey"],
-                "bbox": tile["bbox"]
+                "bbox": tile["bbox"],
+                "z": tile["z"],
+                "x": tile["x"],
+                "y": tile["y"]
             }
         )
+
+    print(data[0])
 
     tiled_data = data.copy()
     for traj in tiled_data:
@@ -82,7 +92,6 @@ if __name__ == "__main__":
         )
         traj["properties"]["coord_system"] = "tile"
 
-    print(data[0])
     print(len(tiled_data))
     print(tiled_data[0])
 
