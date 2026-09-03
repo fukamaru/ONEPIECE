@@ -48,9 +48,9 @@ def render_vector_map(
             if not geometry:
                 continue
 
-            properties = feature.gt("properties") or {}
-            if not _matches(properties, layer["filter"]):
-                continue
+            properties = feature.get("properties") or {}
+            # if not _matches(properties, layer["filter"]):
+            #     continue
 
             if layer["type"] == "fill":
                 _draw_fill(raster=raster, geometry=geometry, layer=layer, sx=sx, sy=sy)
@@ -61,7 +61,7 @@ def render_vector_map(
             elif layer["type"] == "circle":
                 _draw_circle(raster=raster, geometry=geometry, layer=layer, sx=sx, sy=sy)
 
-    return raster.image
+    return raster.image()
 
 # ========================================================================
 # Tessellation and Triangle Rasterization
@@ -97,7 +97,7 @@ def tessellate_line(
         )
 
     if len(points) < (3 if closed else 2):
-        return _empty_triangles
+        return _empty_triangles()
 
     starts = points if closed else points[:-1]
     ends = np.roll(points, -1, axis=0) if closed else points[1:]
@@ -333,6 +333,7 @@ def _draw_line(
             cap=layer["cap"],
             miter_limit=layer["miter_limit"]
         )
+
         if len(triangles):
             raster.draw(triangles, layer["color"])
 
@@ -365,7 +366,7 @@ def _prepare_layer(layer):
         result.update(
             width=float(layer.get("width", 1.0)),
             join=layer.get("join", "round"),
-            cap=layer.get["cap", "round"],
+            cap=layer.get("cap", "round"),
             miter_limit=float(layer.get("miter_limit", 4.0))
         )
 
@@ -777,3 +778,12 @@ def _to_raster(coords, sx, sy):
     output[:, 1] = points[:, 1] * sy
 
     return output
+
+
+__all___ = [
+    "render_vector_map",
+    "tessellate_line",
+    "tessellate_circle",
+    "triangulate_ring",
+    "parse_color"
+]

@@ -5,7 +5,7 @@ import time
 import numpy as np
 import pytest
 
-from tiles import (
+from src.utils.map_engine.tiles import (
     BBox,
     MapTile,
     MapTileBatch,

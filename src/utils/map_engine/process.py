@@ -61,7 +61,7 @@ import numpy as np
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List, Mapping, MutableMapping, Optional, Sequence, Tuple, Union, Literal
 
-from tiles import BBox, MapTile, MapTileSystem
+from .tiles import BBox, MapTile, MapTileSystem
 
 
 EXTENT = 4096

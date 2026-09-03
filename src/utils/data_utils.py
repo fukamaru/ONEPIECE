@@ -16,7 +16,7 @@ from pathlib import Path
 from datetime import date, datetime, time
 from dataclasses import fields, is_dataclass
 from shapely.geometry import Point, LineString, Polygon
-from typing import Any, Iterator, Union, Literal, Self, get_origin, get_args, get_type_hints
+from typing import Any, Iterator, Union, Literal, get_origin, get_args, get_type_hints
 
 
 # ===============================================================================================
@@ -24,19 +24,26 @@ from typing import Any, Iterator, Union, Literal, Self, get_origin, get_args, ge
 # ===============================================================================================
 
 def load_mobility_data(
-        filepath
+        filepath,
+        feature_only: bool = False
 ):
     ext = os.path.splitext(filepath)[-1]
 
     if (
-        ext == 'json'
-        or ext == 'jsonl'
-        or ext == 'geojson'
+        ext == '.json'
+        or ext == '.jsonl'
+        or ext == '.geojson'
     ):
         with open(filepath, 'r') as f:
             data = json.load(f)
 
-        return data['features']
+        if feature_only:
+            return data['features'], None
+        else:
+            return (
+                data['features'],
+                {k: v for k, v in data.items() if k != 'features'}
+            )
 
 def _to_geometry(
         lonlat: np.ndarray,
