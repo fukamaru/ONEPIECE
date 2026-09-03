@@ -4,11 +4,13 @@ TODO
 """
 from __future__ import annotations
 
+import os
 import json
 import uuid
 import types
 import base64
 import numpy as np
+
 from enum import Enum
 from pathlib import Path
 from datetime import date, datetime, time
@@ -20,6 +22,21 @@ from typing import Any, Iterator, Union, Literal, Self, get_origin, get_args, ge
 # ===============================================================================================
 # Save/Load Mobility Data as/from GeoJSON like format
 # ===============================================================================================
+
+def load_mobility_data(
+        filepath
+):
+    ext = os.path.splitext(filepath)[-1]
+
+    if (
+        ext == 'json'
+        or ext == 'jsonl'
+        or ext == 'geojson'
+    ):
+        with open(filepath, 'r') as f:
+            data = json.load(f)
+
+        return data['features']
 
 def _to_geometry(
         lonlat: np.ndarray,
