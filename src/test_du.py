@@ -3,7 +3,8 @@ import json
 import numpy as np
 
 from utils.data_utils import load_mobility_data
-from utils.map_engine.tiles import MapTile, MapTileBatch, MapTileSystem
+from map_engine.tile_system import BaseTileSystem, XYZTileSystem
+# from utils.map_engine.tiles import MapTile, MapTileBatch, MapTileSystem
 from utils.map_engine.process import _iter_geometry_coordinate_arrays, _lonlat_to_tile_custom
 
 FILE_PATH = "/Users/linlifeng/Downloads/mobility_data/DiDi-chengdu-simplified.geojson"
@@ -31,12 +32,14 @@ if __name__ == "__main__":
     data, header = load_mobility_data(FILE_PATH, feature_only=False)
     print(header)
 
+    tile_system = XYZTileSystem()
+
     # Build Tile System
-    tile_system = MapTileSystem(
-        bbox=tuple(CHENGDU_METADATA["geographical-range"].values()),
-        max_zoom=CHENGDU_METADATA["tile-system"]["max_zoom"],
-        min_tile_size=CHENGDU_METADATA["tile-system"]["min_tile_size"]
-    )
+    # tile_system = MapTileSystem(
+    #     bbox=tuple(CHENGDU_METADATA["geographical-range"].values()),
+    #     max_zoom=CHENGDU_METADATA["tile-system"]["max_zoom"],
+    #     min_tile_size=CHENGDU_METADATA["tile-system"]["min_tile_size"]
+    # )
 
     # bounds of every trajectory
     bboxs = np.array(
@@ -51,13 +54,14 @@ if __name__ == "__main__":
     )
 
     # the located tile of every trajectory
-    local_tiles = tile_system.query_single(
-        bbox=bboxs
+    local_tiles = tile_system.query_single_loose(
+        bbox=bboxs,
+        loose_factor=1.5
     )
     local_tiles = [
         {
             "quadkey": str(t.quadkey),
-            "bbox": t.bbox.as_tuple(),
+            "bbox": t.loose_bbox.as_tuple(),
             "z": t.z,
             "x": t.x,
             "y": t.y,
@@ -77,7 +81,7 @@ if __name__ == "__main__":
             }
         )
 
-    print(data[0])
+    # print(data[3828])
 
     tiled_data = data.copy()
     for traj in tiled_data:
@@ -93,11 +97,20 @@ if __name__ == "__main__":
         traj["properties"]["coord_system"] = "tile"
 
     print(len(tiled_data))
-    print(tiled_data[0])
+    print(tiled_data[1])
 
-    output = header.copy()
-    output["name"] = "DiDi-chengdu-simplified-tiled"
-    output["features"] = tiled_data
+    all_tiles = [
+        traj["properties"]["quadkey"]
+        for traj in tiled_data
+    ]
+    print(os.path.commonprefix(all_tiles))
 
-    with open("/Users/linlifeng/Downloads/mobility_data/DiDi-chengdu-simplified-tiled.geojson", "w") as f:
-        json.dump(output, f, ensure_ascii=False)
+    max_tile_zoom = min(map(len, all_tiles))
+    print([i for i, t in enumerate(all_tiles) if len(t) == max_tile_zoom])
+
+    # output = header.copy()
+    # output["name"] = "DiDi-chengdu-simplified-tiled"
+    # output["features"] = tiled_data
+
+    # with open("/Users/linlifeng/Downloads/mobility_data/DiDi-chengdu-simplified-tiled.geojson", "w") as f:
+    #     json.dump(output, f, ensure_ascii=False)
