@@ -5,7 +5,7 @@ import numpy as np
 from utils.data_utils import load_mobility_data
 from map_engine.tile_system import BaseTileSystem, XYZTileSystem
 # from utils.map_engine.tiles import MapTile, MapTileBatch, MapTileSystem
-from utils.map_engine.process import _iter_geometry_coordinate_arrays, _lonlat_to_tile_custom
+from map_engine.process import _iter_geometry_coordinate_arrays, _lonlat_to_tile_custom
 
 FILE_PATH = "/Users/linlifeng/Downloads/mobility_data/DiDi-chengdu-simplified.geojson"
 

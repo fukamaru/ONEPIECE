@@ -3,7 +3,7 @@ import json
 import datetime as dt
 
 from utils.data_utils import load_mobility_data
-from utils.map_engine.renderer import render_vector_map
+from map_engine.renderer import render_vector_map
 
 FILE_PATH = "/Users/linlifeng/Downloads/mobility_data/DiDi-chengdu-simplified-tiled.geojson"
 
