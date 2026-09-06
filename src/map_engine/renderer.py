@@ -1,4 +1,6 @@
 """
+This file is duplicated, use vector_render.py instead.
+
 A compact CPU vector-map renderer focused on geometry rendering.
 It intentionally resembles the conceptual stages of modern vector map engines:
 style selection -> geometry tessellation -> triangle rasterization -> blend

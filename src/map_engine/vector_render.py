@@ -71,7 +71,7 @@ class CircleStyle:
 
 
 @dataclass
-class Layer:
+class VectorLayer:
     """Style layer in map engines."""
     id: str
     type: str               # fill / line / circle / icon
@@ -717,7 +717,7 @@ class VectorRenderer:
         self.background = background
         self.antialias = int(antialias)
         self.sources: Dict[str, Any] = {}
-        self.layers: List[Layer] = []
+        self.layers: List[VectorLayer] = []
         # only open icon file once
         self._icon_cache: Dict[str, Image.Image] = {}
 
@@ -762,7 +762,7 @@ class VectorRenderer:
         """
         self.sources[name] = data
 
-    def add_layer(self, layer: Layer) -> None:
+    def add_layer(self, layer: VectorLayer) -> None:
         if layer.type not in ("fill", "line", "circle", ICON_LAYER_TYPE):
             raise ValueError("Layer.type only supports fill / line / circle / line-endpoint")
         if layer.source not in self.sources:
@@ -936,7 +936,7 @@ class VectorRenderer:
 
         return canvas.finish()
 
-    def _render_geometry(self, canvas: RasterCanvas, geom: Mapping[str, Any], layer: Layer) -> None:
+    def _render_geometry(self, canvas: RasterCanvas, geom: Mapping[str, Any], layer: VectorLayer) -> None:
         typ = geom.get("type")
         coords = geom.get("coordinates")
 

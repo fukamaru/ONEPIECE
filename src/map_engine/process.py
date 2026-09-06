@@ -90,6 +90,32 @@ def _as_xy_array(
     return arr[..., :2]
 
 
+def lonlat_to_web_mercator_normalized(coords: ArrayLike) -> np.ndarray:
+    """
+    Convert geographic coordinates to Web-Mercator normalized coordinates.
+    """
+    arr = _as_xy_array(coords)
+    lon = arr[..., 0]
+    lat = np.clip(arr[..., 1], -WEB_MERCATOR_MAX_LAT, WEB_MERCATOR_MAX_LAT)
+
+    x = (lon + 180.0) / 360.0
+    lat_rad = np.deg2rad(lat)
+    y = (1.0 - np.arcsinh(np.tan(lat_rad)) / np.pi) * 0.5
+
+    return np.stack((x, y), axis=-1)
+
+
+def web_mercator_normalized_to_lonlat(coords: ArrayLike) -> np.ndarray:
+    """Convert Web Mercator normalized coordinates to geographic coordinates."""
+    arr = _as_xy_array(coords)
+    x = arr[..., 0]
+    y = arr[..., 1]
+
+    lon = x * 360.0 - 180.0
+    lat = np.rad2deg(np.arctan(np.sinh(np.pi * (1.0 - 2.0 * y))))
+    return np.stack((lon, lat), axis=-1)
+
+
 def _broadcast(value, shape, name: str, dtype):
     arr = np.asarray(value, dtype=dtype)
     try:
@@ -372,7 +398,7 @@ def simplify_ring(
 
 
 # =========================================================================
-# Geometry Adaptor
+# GeoJSON Geometry Adaptor
 # =========================================================================
 
 def _is_geojson_mapping(
@@ -428,6 +454,45 @@ def _iter_geometry_coordinate_arrays(
             yield from _iter_geometry_coordinate_arrays(geom)
     else:
         raise TypeError(f"Unsupported GeoJSON geometry type: {typ!r}")
+
+
+def _map_geometry_arrays(
+    geometry: GeoJSONLike,
+    mapped_arrays: Iterable[np.ndarray],
+) -> Dict[str, Any]:
+    """用迭代器里的坐标数组按 geometry 原结构重建 geometry。"""
+    it = iter(mapped_arrays)
+    typ = geometry.get("type")
+
+    if typ == "Point":
+        return {"type": typ, "coordinates": next(it)[0].tolist()}
+    if typ in ("MultiPoint", "LineString"):
+        return {"type": typ, "coordinates": next(it).tolist()}
+    if typ == "MultiLineString":
+        return {"type": typ, "coordinates": [next(it).tolist() for _ in geometry.get("coordinates", [])]}
+    if typ == "Polygon":
+        return {"type": typ, "coordinates": [next(it).tolist() for _ in geometry.get("coordinates", [])]}
+    if typ == "MultiPolygon":
+        polygons = []
+        for polygon in geometry.get("coordinates", []):
+            polygons.append([next(it).tolist() for _ in polygon])
+        return {"type": typ, "coordinates": polygons}
+    if typ == "GeometryCollection":
+        out_geoms = []
+        for sub in geometry.get("geometries", []):
+            count = sum(1 for _ in _iter_geometry_coordinate_arrays(sub))
+            sub_arrays = [next(it) for _ in range(count)]
+            out_geoms.append(_map_geometry_arrays(sub, sub_arrays))
+        return {"type": typ, "geometries": out_geoms}
+
+    raise ValueError(f"暂不支持的 GeoJSON geometry type: {typ!r}")
+
+
+def _replace_feature_geometry(obj: GeoJSONLike, new_geometry: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """Replace geometry within data and keep other properties."""
+    out = dict(obj)
+    out["geometry"] = new_geometry
+    return out
 
 
 __all__ = [
