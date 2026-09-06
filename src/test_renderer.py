@@ -9,7 +9,7 @@ from shapely.geometry import Point, LineString
 from utils.data_utils import load_mobility_data
 from map_engine.process import _lonlat_to_tile_custom
 from map_engine.tile_system import XYZTileSystem
-from map_engine.vector_render import VectorRenderer, Layer, LineStyle
+from map_engine.vector_render import VectorRenderer, VectorLayer, LineStyle
 from map_engine.renderer import render_vector_map
 
 FILE_PATH = "/Users/linlifeng/Downloads/mobility_data/DiDi-chengdu-simplified-tiled.geojson"
@@ -124,7 +124,7 @@ def main() -> None:
     #     )
     # )
     renderer.add_layer(
-        Layer(
+        VectorLayer(
             id="move",
             type="line",
             source="one-day-traj",
@@ -140,7 +140,7 @@ def main() -> None:
 
     # Render ICON in the stay point
     renderer.add_layer(
-        Layer(
+        VectorLayer(
             id="start-point", 
             type="icon", 
             source="one-day-traj",
